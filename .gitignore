@@ -1,0 +1,14 @@
+# Ignore log files
+*.log
+
+# Ignore IDE-specific files
+.idea/
+.vscode/
+
+./node_modules
+**/node_modules
+
+# Deploy only the dist files
+!preventive/dist/
+!preventive/action.yml
+preventive/

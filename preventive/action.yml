@@ -1,0 +1,94 @@
+name: 'Adaptive6 Prevent Waste In Action'
+description: 'Prevent waste in PRs'
+inputs:
+  a6p-api-token:
+    description: 'Token for Adaptive6 prevention API'
+    required: true
+  github-token:
+    description: 'GitHub token'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Fetch base branch
+      shell: bash
+      run: |
+        git fetch origin ${{ github.event.pull_request.base.ref }}
+
+    - name: Fetch head branch
+      shell: bash
+      run: |
+        git fetch origin ${{ github.event.pull_request.head.ref }}
+
+    - name: Get list of changed files
+      id: changed-files
+      shell: bash
+      run: |
+        git diff --name-only origin/${{ github.event.pull_request.base.ref }}...origin/${{ github.event.pull_request.head.ref }} | grep "\.tf" > changed-files.txt
+        cat changed-files.txt
+
+    - name: Copy changed files to directory
+      shell: bash
+      run: |
+        find . -name "*.tf" -exec bash -c 'mkdir -p "iac_files/$(dirname "{}")"; cp "{}" "iac_files/{}"' \;
+
+    - name: Print Params
+      shell: bash
+      run: |
+          echo
+          echo "-------------------------------------------------------------------"
+          echo "|                                                                 |"
+          echo "|            _       _             _   _            __            |"
+          echo "|           / \   __| | __ _ _ __ | |_(_)_   _____ / /_           |"
+          echo "|          / _ \ / _\` |/ _\` | '_ \| __| \ \ / / _ \ '_ \          |"
+          echo "|         / ___ \ (_| | (_| | |_) | |_| |\ V /  __/ (_) |         |"
+          echo "|        /_/   \_\__,_|\__,_| .__/ \__|_| \_/ \___|\___/          |"
+          echo "|                           |_|                                   |"
+          echo "|                                                                 |"
+          echo "-------------------------------------------------------------------"
+          echo "url https://api.adaptive6.com/api"
+          echo "repo-owner ${{ github.repository_owner }}"
+          echo "repo ${{ github.repository }}"
+          echo "branch ${{ github.event.pull_request.head.ref }}"
+          echo "commit ${{ github.event.pull_request.head.sha }}"
+          echo "pull-request-number ${{ github.event.pull_request.number }}"
+          echo "pull-request-title ${{ github.event.pull_request.title }}"
+
+    - name: Run Docker container
+      shell: bash
+      run: |
+        cp changed-files.txt iac_files/changed-files.txt
+        docker run -v ${{ github.workspace }}/iac_files:/iac_files public.ecr.aws/i5m0k6z2/a6-preventive:v1.0.573 \
+            --path "/iac_files" \
+            --url "https://api.adaptive6.com/api" \
+            --api-key "${{ inputs.a6p-api-token }}" \
+            --repo-owner "${{ github.repository_owner }}" \
+            --repo "${{ github.repository }}" \
+            --branch "${{ github.event.pull_request.head.ref }}" \
+            --commit "${{ github.event.pull_request.head.sha }}" \
+            --pull-request-number "${{ github.event.pull_request.number }}" \
+            --pull-request-title "${{ github.event.pull_request.title }}" \
+            --scan-source "github" \
+            --changed-files-txt "/iac_files/changed-files.txt" \
+            > cli_output.json
+
+    - name: Print CLI output
+      shell: bash
+      run: cat cli_output.json
+
+    # Call the new action because otherwise we don't have the files in the workspace
+    - name: Parse and Annotate Results
+      uses: adaptive6/actions/preventive/dist@main
+      id: parse_results
+      with:
+        github-token: ${{ inputs.github-token }}
+
+    - name: Set Conclusion
+      shell: bash
+      if: steps.parse_results.outputs.check_conclusion == 'failure'
+      run: exit 1
+

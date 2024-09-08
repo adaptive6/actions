@@ -1,0 +1,9 @@
+name: 'Parse Prevention Output'
+description: 'Parse the output of the prevention action'
+inputs:
+  github-token:
+    description: 'GitHub token'
+    required: true
+runs:
+  using: 'node20'
+  main: 'index.js'
