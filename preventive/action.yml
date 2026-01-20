@@ -147,7 +147,7 @@ runs:
 
     # Call the new action because otherwise we don't have the files in the workspace
     - name: Parse and Annotate Results
-      uses: adaptive6/actions/preventive/dist@ghcr-docker-image
+      uses: adaptive6/actions/preventive/dist@maiin
       id: parse_results
       with:
         github-token: ${{ inputs.github-token }}
