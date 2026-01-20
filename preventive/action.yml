@@ -94,12 +94,12 @@ runs:
     - name: Login to GHCR
       shell: bash
       run: |
-        if [ -n "${{ inputs.ghcr-token }}" ]; then
-          echo "Logging into GitHub Container Registry..."
-          echo "${{ inputs.ghcr-token }}" | docker login ghcr.io -u "${{ inputs.ghcr-user }}" --password-stdin || echo "::warning::Failed to login to GHCR, attempting pull without authentication..."
-        else
-          echo "::warning::GHCR_TOKEN not set, attempting pull without authentication..."
+        if [ -z "${{ inputs.ghcr-token }}" ]; then
+          echo "::error::ghcr-token is required to pull the Docker image. Contact your Adaptive6 representative to obtain the token."
+          exit 1
         fi
+        echo "Logging into GitHub Container Registry..."
+        echo "${{ inputs.ghcr-token }}" | docker login ghcr.io -u "${{ inputs.ghcr-user }}" --password-stdin
 
     - name: Pull Docker image
       shell: bash
