@@ -130,7 +130,7 @@ runs:
             --pull-request-title "${{ github.event.pull_request.title }}" \
             --scan-source "github" \
             --changed-files-txt "/${{ inputs.iac-files-dir }}/changed-files.txt" \
-            > cli_output.json 2>/dev/null
+            > cli_output.json
 
     - name: Print CLI output
       shell: bash
