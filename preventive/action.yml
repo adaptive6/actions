@@ -117,7 +117,6 @@ runs:
         cp changed-files.txt ${{ inputs.iac-files-dir }}/changed-files.txt
         DOCKER_IMAGE="${{ inputs.image-name }}:${{ inputs.image-tag }}"
         echo "Running Docker scan..."
-        set +e
         docker run -v "${{ github.workspace }}/${{ inputs.iac-files-dir }}:/${{ inputs.iac-files-dir }}" \
             "${DOCKER_IMAGE}" \
             --path "/${{ inputs.iac-files-dir }}" \
@@ -132,18 +131,10 @@ runs:
             --scan-source "github" \
             --changed-files-txt "/${{ inputs.iac-files-dir }}/changed-files.txt" \
             2>&1 | tee cli_output.json
-        DOCKER_EXIT_CODE=${PIPESTATUS[0]}
-        set -e
-        echo "Docker exit code: ${DOCKER_EXIT_CODE}"
-        if [ ! -s cli_output.json ]; then
-          echo "Warning: cli_output.json is empty"
-        fi
 
     - name: Print CLI output
       shell: bash
-      run: |
-        echo "=== CLI Output ==="
-        cat cli_output.json || echo "No output file found"
+      run: cat cli_output.json
 
     # Call the new action because otherwise we don't have the files in the workspace
     - name: Parse and Annotate Results
