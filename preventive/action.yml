@@ -2,11 +2,35 @@ name: 'Adaptive6 Prevent Waste In Action'
 description: 'Prevent waste in PRs'
 inputs:
   a6p-api-token:
-    description: 'Token for Adaptive6 prevention API'
+    description: 'Token for A6P API'
     required: true
   github-token:
     description: 'GitHub token'
     required: true
+  ghcr-token:
+    description: 'GitHub Container Registry token for pulling the Docker image'
+    required: false
+    default: ''
+  ghcr-user:
+    description: 'GitHub Container Registry username'
+    required: false
+    default: 'adaptive6-bot'
+  a6-url:
+    description: 'Adaptive6 API URL'
+    required: false
+    default: 'https://api.adaptive6.com/api'
+  image-name:
+    description: 'Docker image name'
+    required: false
+    default: 'ghcr.io/adaptive6/a6-p-cli'
+  image-tag:
+    description: 'Docker image tag'
+    required: false
+    default: 'v0.0.1767862693-linux-amd64'
+  iac-files-dir:
+    description: 'Directory to store IaC files for scanning'
+    required: false
+    default: 'iac_files'
 
 runs:
   using: 'composite'
@@ -28,13 +52,19 @@ runs:
       id: changed-files
       shell: bash
       run: |
-        git diff --name-only origin/${{ github.event.pull_request.base.ref }}...origin/${{ github.event.pull_request.head.ref }} | grep "\.tf" > changed-files.txt
+        touch changed-files.txt
+        git diff --name-only origin/${{ github.event.pull_request.base.ref }}...origin/${{ github.event.pull_request.head.ref }} | grep "\.tf" > changed-files.txt || true
         cat changed-files.txt
 
     - name: Copy changed files to directory
       shell: bash
       run: |
-        find . -name "*.tf" -exec bash -c 'mkdir -p "iac_files/$(dirname "{}")"; cp "{}" "iac_files/{}"' \;
+        IAC_DIR="${{ inputs.iac-files-dir }}"
+        mkdir -p "${IAC_DIR}"
+        find . -name "*.tf" -print0 | while IFS= read -r -d '' file; do
+          mkdir -p "${IAC_DIR}/$(dirname "$file")"
+          cp "$file" "${IAC_DIR}/$file"
+        done
 
     - name: Print Params
       shell: bash
@@ -50,21 +80,47 @@ runs:
           echo "|                           |_|                                   |"
           echo "|                                                                 |"
           echo "-------------------------------------------------------------------"
-          echo "url https://api.adaptive6.com/api"
-          echo "repo-owner ${{ github.repository_owner }}"
-          echo "repo ${{ github.repository }}"
-          echo "branch ${{ github.event.pull_request.head.ref }}"
-          echo "commit ${{ github.event.pull_request.head.sha }}"
-          echo "pull-request-number ${{ github.event.pull_request.number }}"
-          echo "pull-request-title ${{ github.event.pull_request.title }}"
+          echo "url: ${{ inputs.a6-url }}"
+          echo "repo-owner: ${{ github.repository_owner }}"
+          echo "repo: ${{ github.repository }}"
+          echo "branch: ${{ github.event.pull_request.head.ref }}"
+          echo "commit: ${{ github.event.pull_request.head.sha }}"
+          echo "pull-request-number: ${{ github.event.pull_request.number }}"
+          echo "pull-request-title: ${{ github.event.pull_request.title }}"
+          echo "image: ${{ inputs.image-name }}:${{ inputs.image-tag }}"
+          echo "iac-files-dir: ${{ inputs.iac-files-dir }}"
+          echo "-------------------------------------------------------------------"
+
+    - name: Login to GHCR
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.ghcr-token }}" ]; then
+          echo "::error::ghcr-token is required to pull the Docker image. Contact your Adaptive6 representative to obtain the token."
+          exit 1
+        fi
+        echo "Logging into GitHub Container Registry..."
+        echo "${{ inputs.ghcr-token }}" | docker login ghcr.io -u "${{ inputs.ghcr-user }}" --password-stdin
+
+    - name: Pull Docker image
+      shell: bash
+      run: |
+        DOCKER_IMAGE="${{ inputs.image-name }}:${{ inputs.image-tag }}"
+        echo "Pulling Docker image: ${DOCKER_IMAGE}..."
+        if ! docker pull "${DOCKER_IMAGE}"; then
+          echo "::error::Failed to pull Docker image: ${DOCKER_IMAGE}"
+          exit 1
+        fi
 
     - name: Run Docker container
       shell: bash
       run: |
-        cp changed-files.txt iac_files/changed-files.txt
-        docker run -v ${{ github.workspace }}/iac_files:/iac_files public.ecr.aws/i5m0k6z2/a6-preventive:v1.0.573 \
-            --path "/iac_files" \
-            --url "https://api.adaptive6.com/api" \
+        cp changed-files.txt ${{ inputs.iac-files-dir }}/changed-files.txt
+        DOCKER_IMAGE="${{ inputs.image-name }}:${{ inputs.image-tag }}"
+        echo "Running Docker scan..."
+        docker run -v "${{ github.workspace }}/${{ inputs.iac-files-dir }}:/${{ inputs.iac-files-dir }}" \
+            "${DOCKER_IMAGE}" \
+            --path "/${{ inputs.iac-files-dir }}" \
+            --url "${{ inputs.a6-url }}" \
             --api-key "${{ inputs.a6p-api-token }}" \
             --repo-owner "${{ github.repository_owner }}" \
             --repo "${{ github.repository }}" \
@@ -73,8 +129,8 @@ runs:
             --pull-request-number "${{ github.event.pull_request.number }}" \
             --pull-request-title "${{ github.event.pull_request.title }}" \
             --scan-source "github" \
-            --changed-files-txt "/iac_files/changed-files.txt" \
-            > cli_output.json
+            --changed-files-txt "/${{ inputs.iac-files-dir }}/changed-files.txt" \
+            2>&1 | tee cli_output.json
 
     - name: Print CLI output
       shell: bash
@@ -82,13 +138,13 @@ runs:
 
     # Call the new action because otherwise we don't have the files in the workspace
     - name: Parse and Annotate Results
-      uses: adaptive6/actions/preventive/dist@main
+      uses: adaptive6/actions/preventive/dist@maiin
       id: parse_results
       with:
         github-token: ${{ inputs.github-token }}
+        iac-files-dir: ${{ inputs.iac-files-dir }}
 
     - name: Set Conclusion
       shell: bash
       if: steps.parse_results.outputs.check_conclusion == 'failure'
       run: exit 1
-

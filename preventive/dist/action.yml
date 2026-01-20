@@ -4,6 +4,10 @@ inputs:
   github-token:
     description: 'GitHub token'
     required: true
+  iac-files-dir:
+    description: 'Directory where IaC files are stored'
+    required: false
+    default: 'iac_files'
 runs:
   using: 'node20'
   main: 'index.js'

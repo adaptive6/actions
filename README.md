@@ -4,8 +4,11 @@ Prevent waste in pull requests (PRs) by identifying unnecessary changes and ensu
 
 ### Inputs
 
-- `a6p-api-token`: Token for Adaptive6 API (required)
-- `github-token`: GitHub token (required)
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `a6p-api-token` | Token for Adaptive6 API | Yes | - |
+| `github-token` | GitHub token | Yes | - |
+| `ghcr-token` | GitHub Container Registry token for pulling the Docker image | Yes | - |
 
 ### Usage
 
@@ -17,4 +20,5 @@ To use this action in your workflow, add the following step:
   with:
     a6p-api-token: ${{ secrets.A6P_API_TOKEN }}
     github-token: ${{ secrets.GITHUB_TOKEN }}
+    ghcr-token: ${{ secrets.GHCR_TOKEN }}
 ```
