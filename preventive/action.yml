@@ -138,7 +138,7 @@ runs:
 
     # Call the new action because otherwise we don't have the files in the workspace
     - name: Parse and Annotate Results
-      uses: adaptive6/actions/preventive/dist@maiin
+      uses: adaptive6/actions/preventive/dist@main
       id: parse_results
       with:
         github-token: ${{ inputs.github-token }}
