@@ -55,7 +55,7 @@ runs:
         # Terraform .tf files are always IaC. For .yaml/.yml/.json, only
         # include files containing AWSTemplateFormatVersion or AWS:: so we
         # don't sweep up unrelated config (CI manifests, app YAML, etc.).
-        CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }})
+        CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }})
         : > changed-files.txt
         echo "$CHANGED_FILES" | grep -E '\.tf$' >> changed-files.txt || true
         for file in $(echo "$CHANGED_FILES" | grep -E '\.(yaml|yml|json)$' || true); do
