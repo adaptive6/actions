@@ -26,7 +26,7 @@ inputs:
   image-tag:
     description: 'Docker image tag'
     required: false
-    default: 'v0.0.1767862693-linux-amd64'
+    default: 'v0.0.1778598572-linux-amd64'
   iac-files-dir:
     description: 'Directory to store IaC files for scanning'
     required: false
@@ -48,13 +48,21 @@ runs:
       run: |
         git fetch origin ${{ github.event.pull_request.head.ref }}
 
-    - name: Get list of changed files
+    - name: Get list of changed IaC files
       id: changed-files
       shell: bash
       run: |
-        touch changed-files.txt
-        git diff --name-only origin/${{ github.event.pull_request.base.ref }}...origin/${{ github.event.pull_request.head.ref }} | grep "\.tf" > changed-files.txt || true
-        cat changed-files.txt
+        # Terraform .tf files are always IaC. For .yaml/.yml/.json, only
+        # include files containing AWSTemplateFormatVersion or AWS:: so we
+        # don't sweep up unrelated config (CI manifests, app YAML, etc.).
+        CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }})
+        : > changed-files.txt
+        echo "$CHANGED_FILES" | grep -E '\.tf$' >> changed-files.txt || true
+        for file in $(echo "$CHANGED_FILES" | grep -E '\.(yaml|yml|json)$' || true); do
+          if [ -f "$file" ] && grep -qE 'AWSTemplateFormatVersion|AWS::' "$file" 2>/dev/null; then
+            echo "$file" >> changed-files.txt
+          fi
+        done
 
     - name: Copy changed files to directory
       shell: bash
