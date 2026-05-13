@@ -71,10 +71,13 @@ runs:
       run: |
         IAC_DIR="${{ inputs.iac-files-dir }}"
         mkdir -p "${IAC_DIR}"
-        find . -name "*.tf" -print0 | while IFS= read -r -d '' file; do
-          mkdir -p "${IAC_DIR}/$(dirname "$file")"
-          cp "$file" "${IAC_DIR}/$file"
-        done
+        while IFS= read -r file; do
+          [ -z "$file" ] && continue
+          if [ -f "$file" ]; then
+            mkdir -p "${IAC_DIR}/$(dirname "$file")"
+            cp "$file" "${IAC_DIR}/$file"
+          fi
+        done < changed-files.txt
 
     - name: Print Params
       shell: bash
