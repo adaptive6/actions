@@ -63,6 +63,8 @@ runs:
             echo "$file" >> changed-files.txt
           fi
         done
+        echo "=== Changed IaC files ==="
+        cat changed-files.txt
 
     - name: Copy changed files to directory
       shell: bash
