@@ -134,7 +134,7 @@ runs:
             --url "${{ inputs.a6-url }}" \
             --api-key "${{ inputs.a6p-api-token }}" \
             --repo-owner "${{ github.repository_owner }}" \
-            --repo "${{ github.repository }}" \
+            --repo "${{ github.event.repository.name }}" \
             --branch "${{ github.event.pull_request.head.ref }}" \
             --commit "${{ github.event.pull_request.head.sha }}" \
             --pull-request-number "${{ github.event.pull_request.number }}" \
