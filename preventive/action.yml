@@ -93,7 +93,7 @@ runs:
           echo "-------------------------------------------------------------------"
           echo "url: ${{ inputs.a6-url }}"
           echo "repo-owner: ${{ github.repository_owner }}"
-          echo "repo: ${{ github.repository }}"
+          echo "repo: ${{ github.event.repository.name }}"
           echo "branch: ${{ github.event.pull_request.head.ref }}"
           echo "commit: ${{ github.event.pull_request.head.sha }}"
           echo "pull-request-number: ${{ github.event.pull_request.number }}"
@@ -134,7 +134,7 @@ runs:
             --url "${{ inputs.a6-url }}" \
             --api-key "${{ inputs.a6p-api-token }}" \
             --repo-owner "${{ github.repository_owner }}" \
-            --repo "${{ github.repository }}" \
+            --repo "${{ github.event.repository.name }}" \
             --branch "${{ github.event.pull_request.head.ref }}" \
             --commit "${{ github.event.pull_request.head.sha }}" \
             --pull-request-number "${{ github.event.pull_request.number }}" \
