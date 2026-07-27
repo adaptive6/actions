@@ -26,7 +26,7 @@ inputs:
   image-tag:
     description: 'Docker image tag'
     required: false
-    default: 'v0.0.1778598572-linux-amd64'
+    default: 'v0.0.1785153116-linux-amd64'
   iac-files-dir:
     description: 'Directory to store IaC files for scanning'
     required: false
