@@ -1,0 +1,16 @@
+# Ignore log files
+*.log
+
+# Ignore IDE-specific files
+.idea/
+.vscode/
+
+./node_modules
+**/node_modules
+
+# Deploy only action.yml and dist (cannot ignore preventive/ — parent dir blocks negations)
+preventive/*
+!preventive/action.yml
+!preventive/dist/
+preventive/dist/*
+!preventive/dist/**

@@ -1,0 +1,161 @@
+name: 'Adaptive6 Prevent Waste In Action'
+description: 'Prevent waste in PRs'
+inputs:
+  a6p-api-token:
+    description: 'Token for A6P API'
+    required: true
+  github-token:
+    description: 'GitHub token'
+    required: true
+  ghcr-token:
+    description: 'GitHub Container Registry token for pulling the Docker image'
+    required: false
+    default: ''
+  ghcr-user:
+    description: 'GitHub Container Registry username'
+    required: false
+    default: 'adaptive6-bot'
+  a6-url:
+    description: 'Adaptive6 API URL'
+    required: false
+    default: 'https://api.adaptive6.com/api'
+  image-name:
+    description: 'Docker image name'
+    required: false
+    default: 'ghcr.io/adaptive6/a6-p-cli'
+  image-tag:
+    description: 'Docker image tag'
+    required: false
+    default: 'latest'
+  iac-files-dir:
+    description: 'Directory to store IaC files for scanning'
+    required: false
+    default: 'iac_files'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Fetch base branch
+      shell: bash
+      run: |
+        git fetch origin ${{ github.event.pull_request.base.ref }}
+
+    - name: Fetch head branch
+      shell: bash
+      run: |
+        git fetch origin ${{ github.event.pull_request.head.ref }}
+
+    - name: Get list of changed IaC files
+      id: changed-files
+      shell: bash
+      run: |
+        # Terraform .tf files are always IaC. For .yaml/.yml/.json, only
+        # include files containing AWSTemplateFormatVersion or AWS:: so we
+        # don't sweep up unrelated config (CI manifests, app YAML, etc.).
+        CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }})
+        : > changed-files.txt
+        echo "$CHANGED_FILES" | grep -E '\.tf$' >> changed-files.txt || true
+        for file in $(echo "$CHANGED_FILES" | grep -E '\.(yaml|yml|json)$' || true); do
+          if [ -f "$file" ] && grep -qE 'AWSTemplateFormatVersion|AWS::' "$file" 2>/dev/null; then
+            echo "$file" >> changed-files.txt
+          fi
+        done
+
+    - name: Copy changed files to directory
+      shell: bash
+      run: |
+        IAC_DIR="${{ inputs.iac-files-dir }}"
+        mkdir -p "${IAC_DIR}"
+        while IFS= read -r file; do
+          [ -z "$file" ] && continue
+          if [ -f "$file" ]; then
+            mkdir -p "${IAC_DIR}/$(dirname "$file")"
+            cp "$file" "${IAC_DIR}/$file"
+          fi
+        done < changed-files.txt
+
+    - name: Print Params
+      shell: bash
+      run: |
+          echo
+          echo "-------------------------------------------------------------------"
+          echo "|                                                                 |"
+          echo "|            _       _             _   _            __            |"
+          echo "|           / \   __| | __ _ _ __ | |_(_)_   _____ / /_           |"
+          echo "|          / _ \ / _\` |/ _\` | '_ \| __| \ \ / / _ \ '_ \          |"
+          echo "|         / ___ \ (_| | (_| | |_) | |_| |\ V /  __/ (_) |         |"
+          echo "|        /_/   \_\__,_|\__,_| .__/ \__|_| \_/ \___|\___/          |"
+          echo "|                           |_|                                   |"
+          echo "|                                                                 |"
+          echo "-------------------------------------------------------------------"
+          echo "url: ${{ inputs.a6-url }}"
+          echo "repo-owner: ${{ github.repository_owner }}"
+          echo "repo: ${{ github.event.repository.name }}"
+          echo "branch: ${{ github.event.pull_request.head.ref }}"
+          echo "commit: ${{ github.event.pull_request.head.sha }}"
+          echo "pull-request-number: ${{ github.event.pull_request.number }}"
+          echo "pull-request-title: ${{ github.event.pull_request.title }}"
+          echo "image: ${{ inputs.image-name }}:${{ inputs.image-tag }}"
+          echo "iac-files-dir: ${{ inputs.iac-files-dir }}"
+          echo "-------------------------------------------------------------------"
+
+    - name: Login to GHCR
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.ghcr-token }}" ]; then
+          echo "::error::ghcr-token is required to pull the Docker image. Contact your Adaptive6 representative to obtain the token."
+          exit 1
+        fi
+        echo "Logging into GitHub Container Registry..."
+        echo "${{ inputs.ghcr-token }}" | docker login ghcr.io -u "${{ inputs.ghcr-user }}" --password-stdin
+
+    - name: Pull Docker image
+      shell: bash
+      run: |
+        DOCKER_IMAGE="${{ inputs.image-name }}:${{ inputs.image-tag }}"
+        echo "Pulling Docker image: ${DOCKER_IMAGE}..."
+        if ! docker pull "${DOCKER_IMAGE}"; then
+          echo "::error::Failed to pull Docker image: ${DOCKER_IMAGE}"
+          exit 1
+        fi
+
+    - name: Run Docker container
+      shell: bash
+      run: |
+        cp changed-files.txt ${{ inputs.iac-files-dir }}/changed-files.txt
+        DOCKER_IMAGE="${{ inputs.image-name }}:${{ inputs.image-tag }}"
+        echo "Running Docker scan..."
+        docker run -v "${{ github.workspace }}/${{ inputs.iac-files-dir }}:/${{ inputs.iac-files-dir }}" \
+            "${DOCKER_IMAGE}" \
+            --path "/${{ inputs.iac-files-dir }}" \
+            --url "${{ inputs.a6-url }}" \
+            --api-key "${{ inputs.a6p-api-token }}" \
+            --repo-owner "${{ github.repository_owner }}" \
+            --repo "${{ github.event.repository.name }}" \
+            --branch "${{ github.event.pull_request.head.ref }}" \
+            --commit "${{ github.event.pull_request.head.sha }}" \
+            --pull-request-number "${{ github.event.pull_request.number }}" \
+            --pull-request-title "${{ github.event.pull_request.title }}" \
+            --scan-source "github" \
+            --changed-files-txt "/${{ inputs.iac-files-dir }}/changed-files.txt" \
+            2>&1 | tee cli_output.json
+
+    - name: Print CLI output
+      shell: bash
+      run: cat cli_output.json
+
+    # Call the new action because otherwise we don't have the files in the workspace
+    - name: Parse and Annotate Results
+      uses: adaptive6/actions/preventive/dist@main
+      id: parse_results
+      with:
+        github-token: ${{ inputs.github-token }}
+        iac-files-dir: ${{ inputs.iac-files-dir }}
+
+    - name: Set Conclusion
+      shell: bash
+      if: steps.parse_results.outputs.check_conclusion == 'failure'
+      run: exit 1
