@@ -38,47 +38,66 @@ runs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
+    # Event data (PR title, branch names) is controlled by whoever opens the PR. It reaches the
+    # shell only through env variables, always quoted, never as ${{ }} inside run:.
     - name: Fetch base branch
       shell: bash
-      run: |
-        git fetch origin ${{ github.event.pull_request.base.ref }}
+      env:
+        BASE_REF: ${{ github.event.pull_request.base.ref }}
+      run: git fetch origin -- "${BASE_REF}"
 
     - name: Fetch head branch
       shell: bash
-      run: |
-        git fetch origin ${{ github.event.pull_request.head.ref }}
+      env:
+        HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      run: git fetch origin -- "${HEAD_REF}"
 
     - name: Get list of changed IaC files
       id: changed-files
       shell: bash
+      env:
+        BASE_REF: ${{ github.base_ref }}
+        SHA: ${{ github.sha }}
       run: |
         # Terraform .tf files are always IaC. For .yaml/.yml/.json, only
         # include files containing AWSTemplateFormatVersion or AWS:: so we
         # don't sweep up unrelated config (CI manifests, app YAML, etc.).
-        CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }})
+        CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}" "${SHA}" --)
         : > changed-files.txt
         echo "$CHANGED_FILES" | grep -E '\.tf$' >> changed-files.txt || true
-        for file in $(echo "$CHANGED_FILES" | grep -E '\.(yaml|yml|json)$' || true); do
-          if [ -f "$file" ] && grep -qE 'AWSTemplateFormatVersion|AWS::' "$file" 2>/dev/null; then
+        while IFS= read -r file; do
+          [ -z "$file" ] && continue
+          if [ -f "$file" ] && grep -qE 'AWSTemplateFormatVersion|AWS::' -- "$file" 2>/dev/null; then
             echo "$file" >> changed-files.txt
           fi
-        done
+        done < <(echo "$CHANGED_FILES" | grep -E '\.(yaml|yml|json)$' || true)
 
     - name: Copy changed files to directory
       shell: bash
+      env:
+        IAC_DIR: ${{ inputs.iac-files-dir }}
       run: |
-        IAC_DIR="${{ inputs.iac-files-dir }}"
         mkdir -p "${IAC_DIR}"
         while IFS= read -r file; do
           [ -z "$file" ] && continue
           if [ -f "$file" ]; then
-            mkdir -p "${IAC_DIR}/$(dirname "$file")"
-            cp "$file" "${IAC_DIR}/$file"
+            mkdir -p "${IAC_DIR}/$(dirname -- "$file")"
+            cp -- "$file" "${IAC_DIR}/$file"
           fi
         done < changed-files.txt
 
     - name: Print Params
       shell: bash
+      env:
+        A6_URL: ${{ inputs.a6-url }}
+        REPO_OWNER: ${{ github.repository_owner }}
+        REPO: ${{ github.event.repository.name }}
+        BRANCH: ${{ github.event.pull_request.head.ref }}
+        COMMIT: ${{ github.event.pull_request.head.sha }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        IMAGE: ${{ inputs.image-name }}:${{ inputs.image-tag }}
+        IAC_DIR: ${{ inputs.iac-files-dir }}
       run: |
           echo
           echo "-------------------------------------------------------------------"
@@ -91,31 +110,29 @@ runs:
           echo "|                           |_|                                   |"
           echo "|                                                                 |"
           echo "-------------------------------------------------------------------"
-          echo "url: ${{ inputs.a6-url }}"
-          echo "repo-owner: ${{ github.repository_owner }}"
-          echo "repo: ${{ github.event.repository.name }}"
-          echo "branch: ${{ github.event.pull_request.head.ref }}"
-          echo "commit: ${{ github.event.pull_request.head.sha }}"
-          echo "pull-request-number: ${{ github.event.pull_request.number }}"
-          echo "pull-request-title: ${{ github.event.pull_request.title }}"
-          echo "image: ${{ inputs.image-name }}:${{ inputs.image-tag }}"
-          echo "iac-files-dir: ${{ inputs.iac-files-dir }}"
+          printf '%s\n' "url: ${A6_URL}" "repo-owner: ${REPO_OWNER}" "repo: ${REPO}" "branch: ${BRANCH}" \
+            "commit: ${COMMIT}" "pull-request-number: ${PR_NUMBER}" "pull-request-title: ${PR_TITLE}" \
+            "image: ${IMAGE}" "iac-files-dir: ${IAC_DIR}"
           echo "-------------------------------------------------------------------"
 
     - name: Login to GHCR
       shell: bash
+      env:
+        GHCR_TOKEN: ${{ inputs.ghcr-token }}
+        GHCR_USER: ${{ inputs.ghcr-user }}
       run: |
-        if [ -z "${{ inputs.ghcr-token }}" ]; then
+        if [ -z "${GHCR_TOKEN}" ]; then
           echo "::error::ghcr-token is required to pull the Docker image. Contact your Adaptive6 representative to obtain the token."
           exit 1
         fi
         echo "Logging into GitHub Container Registry..."
-        echo "${{ inputs.ghcr-token }}" | docker login ghcr.io -u "${{ inputs.ghcr-user }}" --password-stdin
+        printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
 
     - name: Pull Docker image
       shell: bash
+      env:
+        DOCKER_IMAGE: ${{ inputs.image-name }}:${{ inputs.image-tag }}
       run: |
-        DOCKER_IMAGE="${{ inputs.image-name }}:${{ inputs.image-tag }}"
         echo "Pulling Docker image: ${DOCKER_IMAGE}..."
         if ! docker pull "${DOCKER_IMAGE}"; then
           echo "::error::Failed to pull Docker image: ${DOCKER_IMAGE}"
@@ -124,23 +141,34 @@ runs:
 
     - name: Run Docker container
       shell: bash
+      env:
+        DOCKER_IMAGE: ${{ inputs.image-name }}:${{ inputs.image-tag }}
+        IAC_DIR: ${{ inputs.iac-files-dir }}
+        WORKSPACE: ${{ github.workspace }}
+        A6_URL: ${{ inputs.a6-url }}
+        A6P_API_TOKEN: ${{ inputs.a6p-api-token }}
+        REPO_OWNER: ${{ github.repository_owner }}
+        REPO: ${{ github.event.repository.name }}
+        BRANCH: ${{ github.event.pull_request.head.ref }}
+        COMMIT: ${{ github.event.pull_request.head.sha }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
       run: |
-        cp changed-files.txt ${{ inputs.iac-files-dir }}/changed-files.txt
-        DOCKER_IMAGE="${{ inputs.image-name }}:${{ inputs.image-tag }}"
+        cp changed-files.txt "${IAC_DIR}/changed-files.txt"
         echo "Running Docker scan..."
-        docker run -v "${{ github.workspace }}/${{ inputs.iac-files-dir }}:/${{ inputs.iac-files-dir }}" \
+        docker run -v "${WORKSPACE}/${IAC_DIR}:/${IAC_DIR}" \
             "${DOCKER_IMAGE}" \
-            --path "/${{ inputs.iac-files-dir }}" \
-            --url "${{ inputs.a6-url }}" \
-            --api-key "${{ inputs.a6p-api-token }}" \
-            --repo-owner "${{ github.repository_owner }}" \
-            --repo "${{ github.event.repository.name }}" \
-            --branch "${{ github.event.pull_request.head.ref }}" \
-            --commit "${{ github.event.pull_request.head.sha }}" \
-            --pull-request-number "${{ github.event.pull_request.number }}" \
-            --pull-request-title "${{ github.event.pull_request.title }}" \
+            --path "/${IAC_DIR}" \
+            --url "${A6_URL}" \
+            --api-key "${A6P_API_TOKEN}" \
+            --repo-owner "${REPO_OWNER}" \
+            --repo "${REPO}" \
+            --branch "${BRANCH}" \
+            --commit "${COMMIT}" \
+            --pull-request-number "${PR_NUMBER}" \
+            --pull-request-title "${PR_TITLE}" \
             --scan-source "github" \
-            --changed-files-txt "/${{ inputs.iac-files-dir }}/changed-files.txt" \
+            --changed-files-txt "/${IAC_DIR}/changed-files.txt" \
             2>&1 | tee cli_output.json
 
     - name: Print CLI output
