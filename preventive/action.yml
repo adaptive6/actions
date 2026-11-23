@@ -36,7 +36,7 @@ runs:
   using: 'composite'
   steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2.8.0
 
     - name: Fetch base branch
       shell: bash
@@ -149,7 +149,7 @@ runs:
 
     # Call the new action because otherwise we don't have the files in the workspace
     - name: Parse and Annotate Results
-      uses: adaptive6/actions/preventive/dist@main
+      uses: adaptive6/actions/preventive/dist@a2d8de00aac5e46a0b353a465d4512dbd191d99e # main
       id: parse_results
       with:
         github-token: ${{ inputs.github-token }}
